@@ -21,6 +21,8 @@ class LanguagePack::Ruby < LanguagePack::Base
   JVM_VERSION         = "openjdk7-latest"
   LIBGD_VERSION       = "2.0.36~rc1~dfsg-3.1ubuntu1"
   LIBGD_VENDOR_PATH   = "libgd"
+  ICU4C_VERSION       = "49.1.2"
+  ICU4C_VENDOR_PATH   = "icu4c-#{ICU4C_VERSION}"
 
   # detects if this is a valid Ruby app
   # @return [Boolean] true if it's a Ruby app
@@ -81,6 +83,7 @@ class LanguagePack::Ruby < LanguagePack::Base
     setup_language_pack_environment
     setup_profiled
     install_libgd
+    install_icu4c
     allow_git do
       install_language_pack_gems
       build_bundler
@@ -211,6 +214,7 @@ private
     end
     ENV["GEM_HOME"] = slug_vendor_base
     ENV["PATH"]     = "#{ruby_install_binstub_path}:#{config_vars["PATH"]}"
+    ENV["LD_LIBRARY_PATH"] = "vendor/#{ICU4C_VENDOR_PATH}/lib"
   end
 
   # sets up the profile.d script for this buildpack
@@ -218,6 +222,7 @@ private
     set_env_override "GEM_PATH", "$HOME/#{slug_vendor_base}:$GEM_PATH"
     set_env_default  "LANG",     "en_US.UTF-8"
     set_env_override "PATH",     "$HOME/bin:$HOME/#{slug_vendor_base}/bin:$PATH"
+    set_env_default  "LD_LIBRARY_PATH", "/app/vendor/#{ICU4C_VENDOR_PATH}/lib"
 
     if ruby_version_jruby?
       set_env_default "JAVA_OPTS", default_java_opts
@@ -371,6 +376,14 @@ ERROR
     end
   end
 
+  def install_icu4c
+    dir = File.join('vendor', ICU4C_VENDOR_PATH)
+    FileUtils.mkdir_p dir
+    Dir.chdir(dir) do
+      run("curl #{DO_VENDOR_URL}/icu4c-#{ICU4C_VERSION}.tar.gz -s -o - | tar xzf -")
+    end
+  end
+
   # install libyaml into the LP to be referenced for psych compilation
   # @param [String] tmpdir to store the libyaml files
   def install_libyaml(dir)
@@ -433,9 +446,9 @@ ERROR
         pwd            = run("pwd").chomp
         bundler_path   = "#{pwd}/#{slug_vendor_base}/gems/#{BUNDLER_GEM_PATH}/lib"
         # we need to set BUNDLE_CONFIG and BUNDLE_GEMFILE for
-        # codon since it uses bundler.
-        env_vars       = "env BUNDLE_GEMFILE=#{pwd}/Gemfile BUNDLE_CONFIG=#{pwd}/.bundle/config CPATH=#{yaml_include}:$CPATH CPPATH=#{yaml_include}:$CPPATH LIBRARY_PATH=#{yaml_lib}:$LIBRARY_PATH RUBYOPT=\"#{syck_hack}\""
-        env_vars      += " BUNDLER_LIB_PATH=#{bundler_path}" if ruby_version == "ruby-1.8.7"
+        # codon since it uses bundler. set BUNDLE_BUILD__CHARLOCK_HOLMES to
+        # ensure charlock_holmes uses our custom ICU4C install
+        env_vars       = "env BUNDLE_GEMFILE=#{pwd}/Gemfile BUNDLE_CONFIG=#{pwd}/.bundle/config BUNDLE_BUILD__CHARLOCK_HOLMES=\"--with-icu-dir=#{pwd}/vendor/#{ICU4C_VENDOR_PATH}\" CPATH=#{yaml_include}:$CPATH CPPATH=#{yaml_include}:$CPPATH LIBRARY_PATH=#{yaml_lib}:$LIBRARY_PATH RUBYOPT=\"#{syck_hack}\""
         puts "Running: #{bundle_command}"
         bundler_output << pipe("#{env_vars} #{bundle_command} --no-clean 2>&1")
 
